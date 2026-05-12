@@ -94,15 +94,24 @@ impl SortDir {
         order[(index + 1) % order.len()]
     }
 
-    /// Convert a column-wise sort direction to a regular row sort direction.
-    /// Returns None if the sort is already a row sort or None.
-    pub fn to_row_sort(&self) -> Option<Self> {
+    /// Returns `true` if this sort direction is a column-based sort
+    /// (e.g. `ColAsc`, `ColDesc`, etc.).
+    pub fn is_col_sort(&self) -> bool {
+        matches!(
+            self,
+            Self::ColAsc | Self::ColDesc | Self::ColAscAbs | Self::ColDescAbs
+        )
+    }
+
+    /// Convert a column-based sort direction to a regular sort direction.
+    /// If this is not a column-based sort, returns `self` unchanged.
+    pub fn to_row_sort(&self) -> Self {
         match self {
-            Self::ColAsc => Some(Self::Asc),
-            Self::ColDesc => Some(Self::Desc),
-            Self::ColAscAbs => Some(Self::AscAbs),
-            Self::ColDescAbs => Some(Self::DescAbs),
-            _ => None,
+            Self::ColAsc => Self::Asc,
+            Self::ColDesc => Self::Desc,
+            Self::ColAscAbs => Self::AscAbs,
+            Self::ColDescAbs => Self::DescAbs,
+            other => *other,
         }
     }
 }

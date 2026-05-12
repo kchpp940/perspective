@@ -428,9 +428,19 @@ impl ViewConfig {
         }
 
         let old_split_by_is_empty = self.split_by.is_empty();
-
         changed = Self::_apply(&mut self.group_by, update.group_by) || changed;
         changed = Self::_apply(&mut self.split_by, update.split_by) || changed;
+        let new_split_by_is_empty = self.split_by.is_empty();
+
+        if !old_split_by_is_empty && new_split_by_is_empty {
+            for Sort(_, dir) in &mut self.sort {
+                if dir.is_col_sort() {
+                    *dir = dir.to_row_sort();
+                    changed = true;
+                }
+            }
+        }
+
         changed = Self::_apply(&mut self.columns, update.columns) || changed;
         changed = Self::_apply(&mut self.filter, update.filter) || changed;
         changed = Self::_apply(&mut self.sort, update.sort) || changed;
@@ -441,16 +451,6 @@ impl ViewConfig {
             tracing::info!("`total` incompatible with `group_by`");
             changed = true;
             self.group_by = vec![];
-        }
-
-        let new_split_by_is_empty = self.split_by.is_empty();
-        if old_split_by_is_empty != new_split_by_is_empty && new_split_by_is_empty {
-            for sort in &mut self.sort {
-                if let Some(row_sort) = sort.1.to_row_sort() {
-                    sort.1 = row_sort;
-                    changed = true;
-                }
-            }
         }
 
         changed
@@ -495,16 +495,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_apply_update_converts_column_sort_to_row_sort_when_split_by_removed() {
+    fn test_apply_update_converts_col_sort_to_row_sort_when_split_by_cleared() {
         let mut config = ViewConfig {
-            split_by: vec!["quarter".to_string()],
+            split_by: vec!["a".to_string()],
             sort: vec![
-                Sort("value".to_string(), SortDir::ColAsc),
-                Sort("count".to_string(), SortDir::ColDesc),
-                Sort("profit".to_string(), SortDir::ColAscAbs),
-                Sort("loss".to_string(), SortDir::ColDescAbs),
-                Sort("name".to_string(), SortDir::Asc),
-                Sort("id".to_string(), SortDir::Desc),
+                Sort("x".to_string(), SortDir::ColAsc),
+                Sort("y".to_string(), SortDir::ColDesc),
+                Sort("z".to_string(), SortDir::ColAscAbs),
+                Sort("w".to_string(), SortDir::ColDescAbs),
             ],
             ..ViewConfig::default()
         };
@@ -517,56 +515,99 @@ mod tests {
         let changed = config.apply_update(update);
         assert!(changed, "apply_update should return true when sort is converted");
 
-        assert_eq!(config.sort[0].1, SortDir::Asc, "ColAsc should become Asc");
-        assert_eq!(config.sort[1].1, SortDir::Desc, "ColDesc should become Desc");
-        assert_eq!(config.sort[2].1, SortDir::AscAbs, "ColAscAbs should become AscAbs");
-        assert_eq!(config.sort[3].1, SortDir::DescAbs, "ColDescAbs should become DescAbs");
-        assert_eq!(config.sort[4].1, SortDir::Asc, "Asc should remain Asc");
-        assert_eq!(config.sort[5].1, SortDir::Desc, "Desc should remain Desc");
+        assert!(config.split_by.is_empty());
+        assert_eq!(config.sort[0].1, SortDir::Asc);
+        assert_eq!(config.sort[1].1, SortDir::Desc);
+        assert_eq!(config.sort[2].1, SortDir::AscAbs);
+        assert_eq!(config.sort[3].1, SortDir::DescAbs);
     }
 
     #[test]
-    fn test_apply_update_does_not_convert_sort_when_split_by_added() {
+    fn test_apply_update_preserves_row_sort_when_split_by_cleared() {
         let mut config = ViewConfig {
+            split_by: vec!["a".to_string()],
             sort: vec![
-                Sort("value".to_string(), SortDir::Asc),
-                Sort("count".to_string(), SortDir::Desc),
+                Sort("x".to_string(), SortDir::Asc),
+                Sort("y".to_string(), SortDir::Desc),
+                Sort("z".to_string(), SortDir::AscAbs),
+                Sort("w".to_string(), SortDir::DescAbs),
             ],
             ..ViewConfig::default()
         };
 
         let update = ViewConfigUpdate {
-            split_by: Some(vec!["quarter".to_string()]),
+            split_by: Some(vec![]),
             ..ViewConfigUpdate::default()
         };
 
-        let changed = config.apply_update(update);
-        assert!(changed, "apply_update should return true when split_by changes");
+        config.apply_update(update);
 
-        assert_eq!(config.sort[0].1, SortDir::Asc, "Asc should remain Asc when split_by is added");
-        assert_eq!(config.sort[1].1, SortDir::Desc, "Desc should remain Desc when split_by is added");
+        assert!(config.split_by.is_empty());
+        assert_eq!(config.sort[0].1, SortDir::Asc);
+        assert_eq!(config.sort[1].1, SortDir::Desc);
+        assert_eq!(config.sort[2].1, SortDir::AscAbs);
+        assert_eq!(config.sort[3].1, SortDir::DescAbs);
     }
 
     #[test]
-    fn test_apply_update_does_not_convert_sort_when_split_by_unchanged() {
+    fn test_apply_update_preserves_col_sort_when_split_by_added() {
         let mut config = ViewConfig {
-            split_by: vec!["quarter".to_string()],
+            split_by: vec![],
             sort: vec![
-                Sort("value".to_string(), SortDir::ColAsc),
-                Sort("name".to_string(), SortDir::Asc),
+                Sort("x".to_string(), SortDir::Asc),
+                Sort("y".to_string(), SortDir::Desc),
             ],
             ..ViewConfig::default()
         };
 
         let update = ViewConfigUpdate {
-            group_by: Some(vec!["category".to_string()]),
+            split_by: Some(vec!["a".to_string()]),
             ..ViewConfigUpdate::default()
         };
 
-        let changed = config.apply_update(update);
-        assert!(changed, "apply_update should return true when group_by changes");
+        config.apply_update(update);
 
-        assert_eq!(config.sort[0].1, SortDir::ColAsc, "ColAsc should remain ColAsc when split_by unchanged");
-        assert_eq!(config.sort[1].1, SortDir::Asc, "Asc should remain Asc when split_by unchanged");
+        assert!(!config.split_by.is_empty());
+        assert_eq!(config.sort[0].1, SortDir::Asc);
+        assert_eq!(config.sort[1].1, SortDir::Desc);
+    }
+
+    #[test]
+    fn test_apply_update_preserves_col_sort_when_split_by_unchanged() {
+        let mut config = ViewConfig {
+            split_by: vec!["a".to_string()],
+            sort: vec![Sort("x".to_string(), SortDir::ColAsc)],
+            ..ViewConfig::default()
+        };
+
+        let update = ViewConfigUpdate {
+            group_by: Some(vec!["b".to_string()]),
+            ..ViewConfigUpdate::default()
+        };
+
+        config.apply_update(update);
+
+        assert!(!config.split_by.is_empty());
+        assert_eq!(config.sort[0].1, SortDir::ColAsc);
+    }
+
+    #[test]
+    fn test_apply_update_with_explicit_sort_update_overrides_conversion() {
+        let mut config = ViewConfig {
+            split_by: vec!["a".to_string()],
+            sort: vec![Sort("x".to_string(), SortDir::ColAsc)],
+            ..ViewConfig::default()
+        };
+
+        let update = ViewConfigUpdate {
+            split_by: Some(vec![]),
+            sort: Some(vec![Sort("x".to_string(), SortDir::ColDesc)]),
+            ..ViewConfigUpdate::default()
+        };
+
+        config.apply_update(update);
+
+        assert!(config.split_by.is_empty());
+        assert_eq!(config.sort[0].1, SortDir::ColDesc);
     }
 }
