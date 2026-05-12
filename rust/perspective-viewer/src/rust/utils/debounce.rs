@@ -42,10 +42,9 @@ impl DebounceMutex {
 
     /// Lock and also debounce `f`, which should be cancellable.
     pub async fn debounce(&self, f: impl Future<Output = ApiResult<()>>) -> ApiResult<()> {
-        let next = self.0.id.get() + 1;
         let mut last = self.0.mutex.lock().await;
+        let next = self.0.id.get() + 1;
         if *last < next {
-            let next = self.0.id.get() + 1;
             self.0.id.set(next);
             let result = f.await;
             if result.is_ok() {

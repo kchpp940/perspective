@@ -51,11 +51,12 @@ pub struct ViewSubscription {
 impl ViewSubscriptionData {
     /// Main handler when underlying `View()` calls `on_update()`.
     async fn on_view_update(self) -> ApiResult<JsValue> {
+        self.clone().update_view_stats().await?;
+
         if let Some(on_update) = &self.on_update {
             on_update.emit(());
         };
 
-        self.clone().update_view_stats().await?;
         Ok(JsValue::UNDEFINED)
     }
 
