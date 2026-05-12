@@ -427,6 +427,8 @@ impl ViewConfig {
             update.group_by = Some(vec![]);
         }
 
+        let old_split_by_is_empty = self.split_by.is_empty();
+
         changed = Self::_apply(&mut self.group_by, update.group_by) || changed;
         changed = Self::_apply(&mut self.split_by, update.split_by) || changed;
         changed = Self::_apply(&mut self.columns, update.columns) || changed;
@@ -439,6 +441,16 @@ impl ViewConfig {
             tracing::info!("`total` incompatible with `group_by`");
             changed = true;
             self.group_by = vec![];
+        }
+
+        let new_split_by_is_empty = self.split_by.is_empty();
+        if old_split_by_is_empty != new_split_by_is_empty && new_split_by_is_empty {
+            for sort in &mut self.sort {
+                if let Some(row_sort) = sort.1.to_row_sort() {
+                    sort.1 = row_sort;
+                    changed = true;
+                }
+            }
         }
 
         changed
@@ -475,5 +487,86 @@ impl ViewConfig {
         };
 
         _self == _other
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_apply_update_converts_column_sort_to_row_sort_when_split_by_removed() {
+        let mut config = ViewConfig {
+            split_by: vec!["quarter".to_string()],
+            sort: vec![
+                Sort("value".to_string(), SortDir::ColAsc),
+                Sort("count".to_string(), SortDir::ColDesc),
+                Sort("profit".to_string(), SortDir::ColAscAbs),
+                Sort("loss".to_string(), SortDir::ColDescAbs),
+                Sort("name".to_string(), SortDir::Asc),
+                Sort("id".to_string(), SortDir::Desc),
+            ],
+            ..ViewConfig::default()
+        };
+
+        let update = ViewConfigUpdate {
+            split_by: Some(vec![]),
+            ..ViewConfigUpdate::default()
+        };
+
+        let changed = config.apply_update(update);
+        assert!(changed, "apply_update should return true when sort is converted");
+
+        assert_eq!(config.sort[0].1, SortDir::Asc, "ColAsc should become Asc");
+        assert_eq!(config.sort[1].1, SortDir::Desc, "ColDesc should become Desc");
+        assert_eq!(config.sort[2].1, SortDir::AscAbs, "ColAscAbs should become AscAbs");
+        assert_eq!(config.sort[3].1, SortDir::DescAbs, "ColDescAbs should become DescAbs");
+        assert_eq!(config.sort[4].1, SortDir::Asc, "Asc should remain Asc");
+        assert_eq!(config.sort[5].1, SortDir::Desc, "Desc should remain Desc");
+    }
+
+    #[test]
+    fn test_apply_update_does_not_convert_sort_when_split_by_added() {
+        let mut config = ViewConfig {
+            sort: vec![
+                Sort("value".to_string(), SortDir::Asc),
+                Sort("count".to_string(), SortDir::Desc),
+            ],
+            ..ViewConfig::default()
+        };
+
+        let update = ViewConfigUpdate {
+            split_by: Some(vec!["quarter".to_string()]),
+            ..ViewConfigUpdate::default()
+        };
+
+        let changed = config.apply_update(update);
+        assert!(changed, "apply_update should return true when split_by changes");
+
+        assert_eq!(config.sort[0].1, SortDir::Asc, "Asc should remain Asc when split_by is added");
+        assert_eq!(config.sort[1].1, SortDir::Desc, "Desc should remain Desc when split_by is added");
+    }
+
+    #[test]
+    fn test_apply_update_does_not_convert_sort_when_split_by_unchanged() {
+        let mut config = ViewConfig {
+            split_by: vec!["quarter".to_string()],
+            sort: vec![
+                Sort("value".to_string(), SortDir::ColAsc),
+                Sort("name".to_string(), SortDir::Asc),
+            ],
+            ..ViewConfig::default()
+        };
+
+        let update = ViewConfigUpdate {
+            group_by: Some(vec!["category".to_string()]),
+            ..ViewConfigUpdate::default()
+        };
+
+        let changed = config.apply_update(update);
+        assert!(changed, "apply_update should return true when group_by changes");
+
+        assert_eq!(config.sort[0].1, SortDir::ColAsc, "ColAsc should remain ColAsc when split_by unchanged");
+        assert_eq!(config.sort[1].1, SortDir::Asc, "Asc should remain Asc when split_by unchanged");
     }
 }

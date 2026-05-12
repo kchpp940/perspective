@@ -10,8 +10,8 @@
 // ┃ of the [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0). ┃
 // ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
 
-import { test } from "@perspective-dev/test";
-import { gotoBasic, renderAndCapture } from "./helpers";
+import { test, expect } from "@perspective-dev/test";
+import { gotoBasic, renderAndCapture, restoreChart, waitOneFrame } from "./helpers";
 
 test.describe("Y Bar", () => {
     test.beforeEach(async ({ page }) => {
@@ -49,5 +49,53 @@ test.describe("Y Bar", () => {
             columns: ["Sales"],
             group_by: ["Region", "Category"],
         });
+    });
+
+    test("column sort is converted to row sort when split_by is removed", async ({
+        page,
+    }) => {
+        await restoreChart(page, {
+            plugin: "Y Bar",
+            columns: ["Sales", "Profit"],
+            group_by: ["Category"],
+            split_by: ["Region"],
+            sort: [
+                ["Sales", "col asc"],
+                ["Profit", "col desc"],
+                ["Category", "asc"],
+            ],
+        });
+
+        const configBefore = await page.evaluate(async () => {
+            const viewer = document.querySelector("perspective-viewer") as any;
+            return await viewer.getViewConfig();
+        });
+
+        expect(configBefore.split_by).toEqual(["Region"]);
+        expect(configBefore.sort).toEqual([
+            ["Sales", "col asc"],
+            ["Profit", "col desc"],
+            ["Category", "asc"],
+        ]);
+
+        await page.evaluate(async () => {
+            const viewer = document.querySelector("perspective-viewer") as any;
+            await viewer.restore({
+                split_by: [],
+            });
+        });
+        await waitOneFrame(page);
+
+        const configAfter = await page.evaluate(async () => {
+            const viewer = document.querySelector("perspective-viewer") as any;
+            return await viewer.getViewConfig();
+        });
+
+        expect(configAfter.split_by).toEqual([]);
+        expect(configAfter.sort).toEqual([
+            ["Sales", "asc"],
+            ["Profit", "desc"],
+            ["Category", "asc"],
+        ]);
     });
 });

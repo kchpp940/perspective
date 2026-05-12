@@ -93,6 +93,18 @@ impl SortDir {
         let index = order.iter().position(|x| x == self).unwrap_or(0);
         order[(index + 1) % order.len()]
     }
+
+    /// Convert a column-wise sort direction to a regular row sort direction.
+    /// Returns None if the sort is already a row sort or None.
+    pub fn to_row_sort(&self) -> Option<Self> {
+        match self {
+            Self::ColAsc => Some(Self::Asc),
+            Self::ColDesc => Some(Self::Desc),
+            Self::ColAscAbs => Some(Self::AscAbs),
+            Self::ColDescAbs => Some(Self::DescAbs),
+            _ => None,
+        }
+    }
 }
 
 impl From<SortDir> for proto::SortOp {
